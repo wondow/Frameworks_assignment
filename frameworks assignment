@@ -1,0 +1,174 @@
+Conversation opened. 1 read message. 
+
+Skip to content
+Using Gmail with screen readers
+10 of 11,801
+Frameworks Assignment
+Inbox
+
+William Obino
+Attachments
+Fri, Sep 19, 3:52 PM (9 hours ago)
+to me
+
+Do you want a readme for it?
+
+You can download the metadata file directly by opening this link. i think it should work. If not then you can open the link from the assignment and get it directly from Kaggle.
+
+William Obino
+Founder, Acetut
++254759939388
+Acetut
+ One attachment
+  •  Scanned by Gmail
+import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from wordcloud import WordCloud, STOPWORDS
+import warnings
+
+# Suppress warnings for a cleaner output in the app
+warnings.filterwarnings('ignore')
+
+# Set the overall page configuration for the Streamlit app
+st.set_page_config(layout="wide")
+
+# - Part 1 & 2: Data Loading and Cleaning -
+# Use a cache decorator to load and clean data only once, improving performance
+@st.cache_data
+def load_and_clean_data(file_path):
+    """
+    Loads the CORD-19 metadata.csv, cleans it, and prepares it for analysis.
+    - Handles missing values in critical columns.
+    - Converts 'publish_time' to datetime and extracts the year.
+    - Filters for a reasonable date range to exclude bad data.
+    """
+    try:
+        # load the dataset, using low-memory=False to avoid DtypeWarning
+        df = pd.read_csv(file_path, low_memory=False)
+
+        # - Data Cleaning -
+        # Drop rows where title ot publish_time  is missing, as they are critical
+        df.dropna(subset=['title', 'publish_time'], inplace=True)
+
+        # Fill missing journal names with 'Unknown'
+        df['journal'].fillna('Unknown', inplace=True)
+
+        # - Data Preparation -
+        # Convert 'publish_time' to datetime, coercing errors to NaT(Not a Time)
+        df['publish_time'] = pd.to_datetime(df['publish_time'], errors='coerce')
+
+        # Drop any rows where date conversion failed
+        df.dropna(subset=['publish_time'], inplace=True)
+
+        # extract the year into a new column
+        df['year'] = df['publish_time'].dt.year
+
+        # Filter for a sensible range of years like after 2000 to ensure data quality
+        df = df[df['year'] > 2000]
+
+        return df
+    except FileNotFoundError:
+        # Provide a user-friendly error if th e file is not found
+        st.error(f"Error: The file '{file_path}' was not found. Please download it from Kaggle and place it in teh same directory as the script.")
+        return None
+
+# load the data by calling the function
+df = load_and_clean_data('metadata.csv')
+
+# - Part 4: Streamlit Application -
+
+# Main title and description
+st.title("🔬 CORD-19 Research Paper Explorer")
+st.markdown("""
+This interactive application provides a basic analysis of the CORD-19 research dataset.
+Use the filters on the left to explore publications by year, journal and source.
+""")
+
+# proceed only if the DataFrame was loaded successfully
+if df is not None:
+    # - Interactive Sidebar for Filters -
+    st.sidebar.header("Filter Options")
+    
+    # Year range slider
+    min_year, max_year = int(df['year'].min()), int(df['year'].max())
+    selected_year_range = st.sidebar.slider(
+        "Select Year Range:", 
+        min_year, 
+        max_year, 
+        (2019, max_year) # deafault range
+    )
+
+    # Filter the DataFrame based on the sleceted year range
+    filtered_df = df[(df['year'] >= selected_year_range[0]) & (df['year'] <= selected_year_range[1])]
+
+    # - Display Key Metrics -
+    st.header("Filtered Data Overview")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Papers", f"{filtered_df.shape[0]:,}")
+    col2.metric("Number of Journals", f"{filtered_df['journal'].nunique():,}")
+    col3.metric("Number of Sources", f"{filtered_df['source_x'].nunique():,}")
+
+    # Display a sample of the filtered data
+    st.dataframe(filtered_df[['title', 'journal', 'year', 'source_x']].head())
+
+    # - Part 3: Data Analysis and Visualization -
+    st.header("📊 Visualizations")
+    
+    # Create 2 columns for visualizations
+    fig_col1, fig_col2 = st.columns(2)
+
+    with fig_col1:
+        # 1. Plot: Number of publications over time (Bar Chart)
+        st.subheader("Publications Over Time")
+        year_counts = filtered_df['year'].value_counts().sort_index()
+        fig1, ax1 = plt.subplots(figsize=(10, 6))
+        sns.barplot(x=year_counts.index, y=year_counts.values, ax=ax1, palette="viridis")
+        ax1.set_title("Number of Publications per Year")
+        ax1.set_xlabel("Year")
+        ax1.set_ylabel("Number of Papers")
+        plt.xticks(rotation=45)
+        st.pyplot(fig1)
+
+        # 2. Plot: Top Publishing Journals (Bar Chart)
+        st.subheader("Top 10 Publishing Journals")
+        top_journals = filtered_df['journal'].value_counts().nlargest(10)
+        fig2, ax2 = plt.subplots(figsize=(10, 6))
+        sns.barplot(x=top_journals.values, y=top_journals.index, ax=ax2, palette="plasma", orient='h')
+        ax2.set_title("Top 10 Journals by Number of Publications")
+        ax2.set_xlabel("Number of Papers")
+        ax2.set_ylabel("Journal")
+        st.pyplot(fig2)
+
+    with fig_col2:
+        # 3. Plot: Distribution of papers by source (Bar Chart)
+        st.subheader("Top 10 Paper Sources")
+        top_sources = filtered_df['source_x'].value_counts().nlargest(10)
+        fig3, ax3 = plt.subplots(figsize=(10, 6))
+        sns.barplot(x=top_sources.values, y=top_sources.index, ax=ax3, palette="magma", orient='h')
+        ax3.set_title("Top 10 Sources of Publications")
+        ax3.set_xlabel("Number of Papers")
+        ax3.set_ylabel("Source")
+        st.pyplot(fig3)
+        
+        # 4. Plot: Word Cloud of paper titles
+        st.subheader("Most Frequent Words in Paper Titles")
+        # Combine all titles into a single text block
+        text = ' '.join(filtered_df['title'].dropna().tolist())
+        # Define stopwords to exclude common words
+        stopwords = set(STOPWORDS)
+        stopwords.update(["et", "al", "COVID-19", "SARS-CoV-2", "coronavirus", "novel"])
+
+        try:
+            wordcloud = WordCloud(width=800, height=400, background_color='white', stopwords=stopwords).generate(text)
+            fig4, ax4 = plt.subplots(figsize=(10, 5))
+            ax4.imshow(wordcloud, interpolation='bilinear')
+            ax4.axis('off')
+            st.pyplot(fig4)
+        except ValueError:
+            st.warning("Not enough words in the selected range to generate a word cloud.")
+
+
+app.py
+Displaying app.py.
